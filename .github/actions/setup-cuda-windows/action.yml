@@ -1,0 +1,62 @@
+name: "Setup CUDA (Windows)"
+description: "Downloads, caches, and installs NVIDIA CUDA for Windows"
+inputs:
+  cuda-version:
+    description: "CUDA version (e.g., 13.0.1)"
+    required: true
+  cuda-components:
+    description: "Comma-separated list of CUDA components to install"
+    required: true
+  cache-key:
+    description: "Extra cache key part"
+    required: false
+    default: "default"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure CUDA Path (Windows)
+      shell: pwsh
+      run: |
+        $cudaVersion = "${{ inputs.cuda-version }}"
+        $cudaShort = $cudaVersion -replace '\.\d+$', ''
+        $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$cudaShort"
+
+        "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "CUDA_VERSION_WINDOWS=$cudaVersion" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "CUDA_VERSION_WINDOWS_SHORT=$cudaShort" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+        $componentsSafe = "${{ inputs.cuda-components }}" -replace ',', '-' -replace ' ', ''
+
+        "CUDA_COMPONENTS=$componentsSafe" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "CUDAToolkit_ROOT=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "$cudaPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    - name: Cache CUDA (Windows)
+      id: cache-cuda
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      with:
+        path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
+        key: setup-cuda-windows-${{ runner.os }}-${{ inputs.cuda-version }}-${{ env.CUDA_COMPONENTS }}-${{ inputs.cache-key }}
+
+    - name: Setup CUDA (Windows)
+      if: steps.cache-cuda.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $cudaVersion = $env:CUDA_VERSION_WINDOWS
+        $cudaShort = $env:CUDA_VERSION_WINDOWS_SHORT
+        curl.exe -s -o cuda_installer.exe -L `
+          "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
+        $components = "${{ inputs.cuda-components }}".Split(',') | ForEach-Object { $_.Trim() }
+        $installArgs = @("-s")
+        foreach ($comp in $components) {
+            $installArgs += "${comp}_$cudaShort"
+        }
+        Start-Process ./cuda_installer.exe -ArgumentList $installArgs -Wait
+
+    - name: Cache CUDA (Windows)
+      if: steps.cache-cuda.outputs.cache-hit != 'true'
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      with:
+        path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
+        key: setup-cuda-windows-${{ runner.os }}-${{ inputs.cuda-version }}-${{ env.CUDA_COMPONENTS }}-${{ inputs.cache-key }}

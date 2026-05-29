@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "tensorrt_build_backend"
+backend-path = ["."]
+
+[project]
+name = "build-backend-placeholder"
+version = "##TENSORRT_PYTHON_VERSION##"
+description = "##TENSORRT_README##"
+requires-python = ">=3.8"
+license = "Apache-2.0"
+license-files = ["LICENSE.txt"]
+classifiers = ["Programming Language :: Python :: 3"]
+dependencies = [
+    "tensorrt_cu##CUDA_MAJOR##_libs == ##TENSORRT_PYTHON_VERSION##",
+]
+
+[tool.setuptools]
+packages = { find = { include = ["build-backend-placeholder"], exclude = ["tensorrt_build_backend"] } }
+package-data = { "*" = ["*.pyd", "*.so", "*.dll"] }
+
+[tool.tensorrt]
+base-name = "##TENSORRT_MODULE##"
+cuda-major = "##CUDA_MAJOR##"

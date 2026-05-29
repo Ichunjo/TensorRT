@@ -1,0 +1,59 @@
+name: Setup TensorRT (Linux)
+description: Installs and configures NVIDIA TensorRT and CUDA components for Linux (RHEL/Manylinux)
+inputs:
+  tensorrt-version:
+    description: TensorRT version (e.g., 10.16.1.11-1.cuda13.2)
+    required: true
+  tensorrt-components:
+    description: Comma-separated list of TensorRT components to install
+    required: true
+  cuda-repo:
+    description: CUDA repository path (e.g., rhel8/x86_64)
+    required: true
+  cuda-version:
+    description: CUDA version (e.g., 13.2)
+    required: true
+  cuda-components:
+    description: Comma-separated list of CUDA components to install
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup TensorRT (Linux)
+      shell: bash
+      run: |
+        TRT_VER="${{ inputs.tensorrt-version }}"
+        CUDA_VER="${{ inputs.cuda-version }}"
+        CUDA_REPO="${{ inputs.cuda-repo }}"
+        CUDA_REPO_DIST="${CUDA_REPO%%/*}"
+
+        dnf install -y 'dnf-command(config-manager)'
+        dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO}/cuda-${CUDA_REPO_DIST}.repo
+        dnf clean all
+
+        PKG_LIST=""
+        CUDA_DASH=${CUDA_VER//./-}
+        IFS=', ' read -ra CUDA_ADDR <<< "${{ inputs.cuda-components }}"
+        for comp in "${CUDA_ADDR[@]}"; do
+          if [ -n "$comp" ]; then
+            PKG_LIST="$PKG_LIST $comp-$CUDA_DASH"
+          fi
+        done
+
+        IFS=', ' read -ra TRT_ADDR <<< "${{ inputs.tensorrt-components }}"
+        for comp in "${TRT_ADDR[@]}"; do
+          if [ -n "$comp" ]; then
+            PKG_LIST="$PKG_LIST $comp-$TRT_VER"
+          fi
+        done
+
+        dnf -y install $PKG_LIST
+
+    - name: Prepare environment variables
+      if: ${{ inputs.cuda-version != '' }}
+      shell: bash
+      run: |
+        echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
+        echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+        echo "TENSORRT_PATH=/usr" >> $GITHUB_ENV

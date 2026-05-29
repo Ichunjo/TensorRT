@@ -1,0 +1,48 @@
+name: "Setup CUDA (Linux)"
+description: "Installs and configures NVIDIA CUDA for Linux (RHEL/Manylinux)"
+inputs:
+  cuda-version:
+    description: "CUDA version (e.g., 12.8)"
+    required: true
+  cuda-repo:
+    description: "CUDA repository path (e.g., rhel8/x86_64)"
+    required: true
+  cuda-components:
+    description: "Comma-separated list of CUDA components to install"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup CUDA (Linux)
+      shell: bash
+      run: |
+        CUDA_VER="${{ inputs.cuda-version }}"
+        CUDA_REPO="${{ inputs.cuda-repo }}"
+        CUDA_DASH=${CUDA_VER//./-}
+        CUDA_REPO_ARR=(${CUDA_REPO//// })
+        CUDA_REPO_VER=${CUDA_REPO_ARR[0]}
+        dnf install -y 'dnf-command(config-manager)'
+        dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO}/cuda-${CUDA_REPO_VER}.repo
+        dnf clean all
+        IFS=', ' read -ra ADDR <<< "${{ inputs.cuda-components }}"
+        PKG_LIST=""
+        for comp in "${ADDR[@]}"; do
+          if [ -n "$comp" ]; then
+            PKG_LIST="$PKG_LIST $comp-$CUDA_DASH"
+          fi
+        done
+        dnf -y install $PKG_LIST
+        echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
+        echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+
+    - name: Prepare CUDA stubs (Linux)
+      shell: bash
+      run: |
+        STUB_DIRS=$(find /usr/local/cuda-${{ inputs.cuda-version }} -name stubs -type d)
+        for dir in $STUB_DIRS; do
+          ln -sf $dir/libcuda.so /usr/lib64/libcuda.so
+          ln -sf $dir/libcuda.so /usr/lib64/libcuda.so.1
+          echo "LD_LIBRARY_PATH=$dir${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=$dir${LIBRARY_PATH:+:${LIBRARY_PATH}}" >> $GITHUB_ENV
+        done
