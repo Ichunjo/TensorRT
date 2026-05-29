@@ -1,0 +1,188 @@
+name: Compile TensorRT Bindings
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "python/**"
+      - ".github/workflows/build-wheels.yml"
+      - ".github/actions/**"
+      - "*.ps1"
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "python/**"
+      - ".github/workflows/build-wheels.yml"
+      - ".github/actions/**"
+      - "*.ps1"
+  workflow_dispatch:
+
+env:
+  TRT_VERSION: "10.16.1"
+  TRT_PY_VERSION: "10.16.1.11"
+  TRT_MAJOR: "10"
+  TRT_MINOR: "16"
+  CUDA_MAJOR: "13"
+  CUDA_WINDOWS_VERSION: "13.2.1"
+  CUDA_LINUX_x86_64_VERSION: "13.2"
+  TENSORRT_WINDOWS_VERSION: "10.16.1.11"
+  TENSORRT_LINUX_VERSION: "10.16.1.11-1.cuda13.2"
+
+jobs:
+  build-wheels:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            cuda_repo: rhel8/x86_64
+            container: quay.io/pypa/manylinux_2_28_x86_64
+          - name: Windows x64
+            os: windows-2025-vs2026
+
+    name: Build wheels on ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Setup CUDA (Windows)
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/setup-cuda-windows
+        with:
+          cuda-version: ${{ env.CUDA_WINDOWS_VERSION }}
+          cuda-components: "nvcc, cudart, cuda_profiler_api, crt, nvptxcompiler"
+          cache-key: ${{ matrix.os }}
+
+      - name: Setup TensorRT (Windows)
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/setup-tensorrt-windows
+        with:
+          tensorrt-version: ${{ env.TENSORRT_WINDOWS_VERSION }}
+          cuda-version: ${{ env.CUDA_WINDOWS_VERSION }}
+          cache-key: ${{ matrix.os }}
+
+      - name: Install PowerShell (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Install PowerShell Core
+          curl -s https://packages.microsoft.com/config/rhel/8/prod.repo | tee /etc/yum.repos.d/microsoft.repo
+          dnf install -y powershell
+
+      - name: Setup CUDA & TensorRT (Linux x64)
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/setup-tensorrt-linux-x86-64
+        with:
+          tensorrt-version: ${{ env.TENSORRT_LINUX_VERSION }}
+          tensorrt-components: >-
+            libnvinfer-devel,
+            libnvinfer-plugin-devel,
+            libnvinfer-dispatch-devel,
+            libnvinfer-lean-devel,
+            libnvinfer-headers-devel,
+            libnvinfer-safe-headers-devel,
+            libnvinfer-headers-plugin-devel,
+            libnvonnxparsers-devel
+          cuda-repo: ${{ matrix.cuda_repo }}
+          cuda-version: ${{ env.CUDA_LINUX_x86_64_VERSION }}
+          cuda-components: "cuda-nvcc, cuda-cudart-devel, cuda-driver-devel, cuda-profiler-api"
+
+      - name: Compile and Build Wheels
+        shell: pwsh
+        run: ./reproduce_build.ps1
+        env:
+          TRT_SDK_DIR: ${{ env.TENSORRT_PATH }}
+
+      - name: Repair Wheels (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          uvx --with patchelf auditwheel repair \
+            --allow-pure-python-wheel \
+            --exclude libnvinfer.so.* \
+            --exclude libnvinfer_plugin.so.* \
+            --exclude libnvonnxparser.so.* \
+            --strip python/build/dist/*.whl \
+            -w repaired_wheels
+          rm python/build/dist/*.whl
+          mv repaired_wheels/*.whl python/build/dist/
+
+      - name: Upload Bindings Wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: tensorrt-bindings-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
+          path: python/build/dist/tensorrt_cu${{ env.CUDA_MAJOR }}_bindings-*.whl
+
+      # - name: Upload Libs Wheels
+      #   uses: actions/upload-artifact@v7
+      #   with:
+      #     name: tensorrt-libs-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
+      #     path: python/build/dist/tensorrt_cu${{ env.CUDA_MAJOR }}_libs-*.whl
+
+      # - name: Upload Frontend Wheels
+      #   uses: actions/upload-artifact@v7
+      #   with:
+      #     name: tensorrt-frontend-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
+      #     path: |
+      #       python/build/dist/tensorrt_cu${{ env.CUDA_MAJOR }}-*.whl
+      #       python/build/dist/tensorrt_cu${{ env.CUDA_MAJOR }}-*.tar.gz
+
+  publish:
+    name: Publish to vs-wheels
+    needs: build-wheels
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Determine version
+        id: version
+        run: |
+          TAG="tensorrt-cu${{ env.CUDA_MAJOR }}_bindings-${{ env.TRT_PY_VERSION }}"
+          echo "version=${{ env.TRT_PY_VERSION }}" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          repository: Jaded-Encoding-Thaumaturgy/vs-wheels
+          token: ${{ secrets.VS_WHEELS_RELEASE_TOKEN }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: tensorrt-cu${{ env.CUDA_MAJOR }}_bindings-${{ steps.version.outputs.version }}
+          files: dist/*
+          body: tensorrt-cu${{ env.CUDA_MAJOR }}_bindings-${{ steps.version.outputs.version }}
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+
+  trigger-index:
+    name: Trigger vs-wheels index
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4
+        with:
+          token: ${{ secrets.VS_WHEELS_RELEASE_TOKEN }}
+          repository: Jaded-Encoding-Thaumaturgy/vs-wheels
+          event-type: index

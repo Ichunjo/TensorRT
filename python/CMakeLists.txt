@@ -351,10 +351,10 @@ message(STATUS "PY_INCLUDE: ${PY_INCLUDE}")
 if(MSVC)
     set(PY_TARGET_DIR win)
 else()
-    set(PY_TARGET_DIR ${TARGET}-linux-gnu)
-    if(${TARGET} STREQUAL ppc64le)
-        set(PY_TARGET_DIR powerpc64le-linux-gnu)
+    if(NOT DEFINED TARGET)
+        set(TARGET "${CMAKE_SYSTEM_PROCESSOR}")
     endif()
+    set(PY_TARGET_DIR ${TARGET}-linux-gnu)
 endif()
 
 # The per-platform pyconfig.h is located at /externals/python<ver>/<triple>/python<ver>/.

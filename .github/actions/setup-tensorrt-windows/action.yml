@@ -1,0 +1,72 @@
+name: Setup TensorRT (Windows)
+description: Downloads, caches, and installs NVIDIA TensorRT for Windows
+inputs:
+  tensorrt-version:
+    description: TensorRT version (e.g., 10.16.1.11)
+    required: true
+  cuda-version:
+    description: CUDA version (e.g., 13.2.1)
+    required: true
+  cache-key:
+    description: Extra cache key part
+    required: false
+    default: "default"
+
+runs:
+  using: composite
+  steps:
+    - name: Define cache key
+      id: cache-key
+      shell: pwsh
+      run: |
+        "key=setup-trt-windows-${{ runner.os }}-${{ inputs.tensorrt-version }}-${{ inputs.cache-key }}" `
+          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    - name: Restore TensorRT
+      id: cache-trt
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      with:
+        path: tensorrt
+        key: ${{ steps.cache-key.outputs.key }}
+
+    - name: Download TensorRT
+      if: steps.cache-trt.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $parts_trt = "${{ inputs.tensorrt-version }}".Split(".")
+        $fullTrtVer = "$($parts_trt[0]).$($parts_trt[1]).$($parts_trt[2]).$($parts_trt[3])"
+        $shortTrtVer = "$($parts_trt[0]).$($parts_trt[1]).$($parts_trt[2])"
+        $parts_cuda = "${{ inputs.cuda-version }}".Split(".")
+        $cudaVer = "$($parts_cuda[0]).$($parts_cuda[1])"
+
+        Write-Host "Full TRT version:" $fullTrtVer
+        Write-Host "Short TRT version:" $shortTrtVer
+        Write-Host "CUDA version:" $cudaVer
+
+        if ($parts_trt[0] -ge 11) {
+          $url = "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/$shortTrtVer/zip/TensorRT-Enterprise-$fullTrtVer-Windows-amd64-cuda-$cudaVer-Release-external.zip"
+        } else {
+          $url = "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/$shortTrtVer/zip/TensorRT-$fullTrtVer.Windows.amd64.cuda-$cudaVer.zip"
+        }
+        Write-Host "Downloading TensorRT from $url"
+        curl.exe -L -o trt.zip $url
+
+        Write-Host "Extracting TensorRT..."
+        Expand-Archive -LiteralPath trt.zip -DestinationPath . -Force
+        $extractedFolder = (Get-ChildItem -Path "TensorRT-*" -Directory | Select-Object -First 1).FullName
+        Move-Item -Path $extractedFolder -Destination "tensorrt"
+        Remove-Item -Path trt.zip -Force
+
+    - name: Save TensorRT
+      if: steps.cache-trt.outputs.cache-hit != 'true'
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      with:
+        path: tensorrt
+        key: ${{ steps.cache-key.outputs.key }}
+
+    - name: Configure TensorRT Paths
+      shell: pwsh
+      run: |
+        $trtPath = (Resolve-Path "tensorrt").Path
+        "TENSORRT_HOME=$trtPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "TENSORRT_PATH=$trtPath" | Out-File -FilePath $env:GITHUB_ENV -Append

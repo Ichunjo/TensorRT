@@ -46,6 +46,7 @@ Config settings (passed via `python -m build --config-setting=key=value`):
     plat-name: Platform tag for the wheel (e.g., "linux_x86_64")
 """
 
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -56,10 +57,10 @@ except ImportError:
     import tomli as tomllib
 
 from setuptools.build_meta import (
-    build_sdist,
+    build_sdist as _setuptools_build_sdist,
     get_requires_for_build_sdist,
     get_requires_for_build_wheel,
-    prepare_metadata_for_build_wheel,
+    prepare_metadata_for_build_wheel as _setuptools_prepare_metadata,
 )
 from setuptools.build_meta import build_wheel as _setuptools_build_wheel
 
@@ -112,8 +113,8 @@ def _compute_package_names(trt_config, wheel_type):
         # Standalone bindings: tensorrt_cu12_bindings / tensorrt_bindings
         return f"{base_name}_cu{cuda_major}_bindings", f"{base_name}_bindings"
     elif wheel_type == "libs":
-        # Libs wheel: tensorrt_cu12_libs / tensorrt
-        return f"{base_name}_cu{cuda_major}_libs", base_name
+        # Libs wheel: tensorrt_cu12_libs / tensorrt_libs
+        return f"{base_name}_cu{cuda_major}_libs", f"{base_name}_libs"
     elif wheel_type == "frontend":
         # Frontend wheel: tensorrt_cu12 / tensorrt
         return f"{base_name}_cu{cuda_major}", base_name
@@ -168,10 +169,11 @@ def _update_pyproject_for_build(dist_name, import_name):
         f'name = "{dist_name}"'
     )
     
-    # Update packages.find.include to use import name
-    content = content.replace(
-        'include = ["build-backend-placeholder"]',
-        f'include = ["{import_name}*"]'
+    # Update packages.find.include to use import name, robust to formatting/whitespace
+    content = re.sub(
+        r'include\s*=\s*\[\s*["\']build-backend-placeholder["\']\s*,?\s*\]',
+        f'include = ["{import_name}*"]',
+        content
     )
     
     pyproject_path.write_text(content)
@@ -244,6 +246,28 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
         shutil.move(str(wheel_path), str(final_wheel_path))
         
         return final_wheel_path.name
+
+
+def build_sdist(sdist_directory, config_settings=None):
+    """Build an sdist with TensorRT-specific customizations."""
+    wheel_type = _get_wheel_type(config_settings)
+    if wheel_type:
+        trt_config = _get_tensorrt_config()
+        dist_name, import_name = _compute_package_names(trt_config, wheel_type)
+        _update_pyproject_for_build(dist_name, import_name)
+    
+    return _setuptools_build_sdist(sdist_directory, config_settings=config_settings)
+
+
+def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None):
+    """Prepare metadata for build wheel with TensorRT-specific customizations."""
+    wheel_type = _get_wheel_type(config_settings)
+    if wheel_type:
+        trt_config = _get_tensorrt_config()
+        dist_name, import_name = _compute_package_names(trt_config, wheel_type)
+        _update_pyproject_for_build(dist_name, import_name)
+        
+    return _setuptools_prepare_metadata(metadata_directory, config_settings=config_settings)
 
 
 # Re-export other hooks from setuptools.build_meta
