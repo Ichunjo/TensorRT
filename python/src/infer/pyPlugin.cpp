@@ -3930,8 +3930,10 @@ void bindPlugin(py::module& m)
 #if EXPORT_ALL_BINDINGS
     m.def("get_builder_plugin_registry", &getBuilderPluginRegistry, py::return_value_policy::reference,
         FreeFunctionsDoc::get_builder_plugin_registry);
+#if !defined(TRT_RTX)
     m.def("init_libnvinfer_plugins", &initLibNvInferPlugins, "logger"_a, "namespace"_a,
         FreeFunctionsDoc::init_libnvinfer_plugins);
+#endif
 #endif
 
 } // Plugin

@@ -12,7 +12,8 @@ if (-not (Test-Path "$Workspace/.venv")) {
 }
 
 # --- VERSION (single source of truth: VERSION file) ---
-$VersionFileContent = (Get-Content "$Workspace/VERSION" -Raw).Trim()
+$IsRTX = ($env:BUILD_RTX -eq "1" -or $env:TRT_RTX -eq "1")
+$VersionFileContent = if ($IsRTX) { (Get-Content "$Workspace/VERSION_RTX" -Raw).Trim() } else { (Get-Content "$Workspace/VERSION" -Raw).Trim() }
 
 $TrtPyVersion = if (-not [string]::IsNullOrEmpty($env:TRT_PY_VERSION)) { $env:TRT_PY_VERSION } else { $VersionFileContent }
 $VersionParts = $TrtPyVersion.Split(".")
@@ -58,13 +59,14 @@ $CudaIncludeDir = "$CudaPath/include"
 
 $TrtSdkDir = $env:TRT_SDK_DIR
 if ([string]::IsNullOrEmpty($TrtSdkDir)) {
-    $PossibleTrtDir = "$Workspace/TensorRT-$TrtPyVersion"
+    $SdkPrefix = if ($IsRTX) { "TensorRT-RTX-" } else { "TensorRT-" }
+    $PossibleTrtDir = "$Workspace/$SdkPrefix$TrtPyVersion"
     if (Test-Path $PossibleTrtDir) {
         $TrtSdkDir = $PossibleTrtDir
     }
     else {
         if ($IsOSWindows) {
-            $TrtSdkDir = "d:\TensorRT\TensorRT-$TrtPyVersion"
+            $TrtSdkDir = "d:\TensorRT\$SdkPrefix$TrtPyVersion"
         }
         else {
             $TrtSdkDir = "/usr/local/tensorrt"
@@ -88,18 +90,35 @@ $ModuleBuildDir = "$BuildDir/build_tensorrt"
 $DistDir = "$BuildDir/dist"
 
 # Shared Replacements Map
-$Replacements = @{
-    "##TENSORRT_VERSION##"         = $TrtVersion
-    "##TENSORRT_MAJMINPATCH##"     = $TrtVersion
-    "##TENSORRT_PYTHON_VERSION##"  = $TrtPyVersion
-    "##TENSORRT_MODULE##"          = "tensorrt"
-    "##TENSORRT_NVINFER_NAME##"    = "nvinfer"
-    "##TENSORRT_MINOR##"           = $TrtMinor
-    "##TENSORRT_MAJOR##"           = $TrtMajor
-    "##TENSORRT_ONNXPARSER_NAME##" = "nvonnxparser"
-    "##TENSORRT_PLUGIN_DISABLED##" = "False"
-    "##CUDA_MAJOR##"               = $CudaMajor
-    "##TENSORRT_README##"          = "Standalone python bindings for TensorRT"
+if ($IsRTX) {
+    $Replacements = @{
+        "##TENSORRT_VERSION##"         = $TrtVersion
+        "##TENSORRT_MAJMINPATCH##"     = $TrtVersion
+        "##TENSORRT_PYTHON_VERSION##"  = $TrtPyVersion
+        "##TENSORRT_MODULE##"          = "tensorrt_rtx"
+        "##TENSORRT_NVINFER_NAME##"    = "tensorrt_rtx"
+        "##TENSORRT_MINOR##"           = $TrtMinor
+        "##TENSORRT_MAJOR##"           = $TrtMajor
+        "##TENSORRT_ONNXPARSER_NAME##" = "tensorrt_onnxparser_rtx"
+        "##TENSORRT_PLUGIN_DISABLED##" = "True"
+        "##CUDA_MAJOR##"               = $CudaMajor
+        "##TENSORRT_README##"          = "NVIDIA TensorRT RTX is an SDK for high-performance AI inference on NVIDIA RTX GPUs. It includes a Just-in-Time compiler for fast on-device inference optimizations that enable portable deployments and runtime performance specialization. It also introduces convenience features such as built-in CUDA graph support, runtime cache, and a simplified development workflow."
+    }
+}
+else {
+    $Replacements = @{
+        "##TENSORRT_VERSION##"         = $TrtVersion
+        "##TENSORRT_MAJMINPATCH##"     = $TrtVersion
+        "##TENSORRT_PYTHON_VERSION##"  = $TrtPyVersion
+        "##TENSORRT_MODULE##"          = "tensorrt"
+        "##TENSORRT_NVINFER_NAME##"    = "nvinfer"
+        "##TENSORRT_MINOR##"           = $TrtMinor
+        "##TENSORRT_MAJOR##"           = $TrtMajor
+        "##TENSORRT_ONNXPARSER_NAME##" = "nvonnxparser"
+        "##TENSORRT_PLUGIN_DISABLED##" = "False"
+        "##CUDA_MAJOR##"               = $CudaMajor
+        "##TENSORRT_README##"          = "Standalone python bindings for TensorRT"
+    }
 }
 
 # --- HELPER FUNCTIONS ---
@@ -108,7 +127,6 @@ function Remove-LinkOrDirectory {
     <#
     .SYNOPSIS
         Removes a symlink, junction, or regular directory.
-        Handles broken junctions (e.g., stale WSL-path reparse points) gracefully.
     #>
     param(
         [Parameter(Mandatory)][string]$Path
@@ -119,14 +137,7 @@ function Remove-LinkOrDirectory {
     if ($IsOSWindows) {
         $Item = Get-Item $Path
         if ($Item.Attributes -match "ReparsePoint") {
-            # Try Directory::Delete first (normal junctions), fall back to File::Delete
-            # for broken reparse points that the system doesn't recognize as directories
-            try {
-                [System.IO.Directory]::Delete($Path)
-            }
-            catch {
-                [System.IO.File]::Delete($Path)
-            }
+            [System.IO.Directory]::Delete($Path)
         }
         else {
             Remove-Item -Force -Recurse $Path
@@ -173,6 +184,6 @@ function Invoke-PlaceholderReplacement {
         foreach ($Key in $Replacements.Keys) {
             $Content = $Content.Replace($Key, $Replacements[$Key])
         }
-        [System.IO.File]::WriteAllText($File.FullName, $Content, (New-Object System.Text.UTF8Encoding $false))
+        Set-Content -Path $File.FullName -Value $Content -Encoding utf8NoBOM -NoNewline
     }
 }

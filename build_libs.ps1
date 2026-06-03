@@ -11,6 +11,13 @@ if (Test-Path $LibsTemp) {
 }
 Copy-Item -Path "$Workspace/python/packaging/libs_wheel" -Destination $LibsTemp -Recurse
 
+# Rename package directory if not default
+$TrtModule = if ($IsRTX) { "tensorrt_rtx" } else { "tensorrt" }
+$TrtModuleLibs = $TrtModule + "_libs"
+if ($TrtModule -ne "tensorrt") {
+    Rename-Item -Path "$LibsTemp/tensorrt_libs" -NewName $TrtModuleLibs
+}
+
 # Copy build backend
 Copy-Item -Path "$Workspace/python/packaging/tensorrt_build_backend" -Destination "$LibsTemp/tensorrt_build_backend" -Recurse
 
@@ -19,20 +26,20 @@ Copy-Item -Path "$Workspace/python/packaging/requirements.txt" -Destination "$Li
 
 # Copy all TensorRT DLLs / Shared Libraries
 if ($IsOSWindows) {
-    Write-Host "Copying TensorRT DLLs to tensorrt_libs..." -ForegroundColor Green
+    Write-Host "Copying TensorRT DLLs to $TrtModuleLibs..." -ForegroundColor Green
     Get-ChildItem -Path "$TrtSdkDir/bin" -Filter "*.dll" | ForEach-Object {
-        Copy-Item -Path $_.FullName -Destination "$LibsTemp/tensorrt_libs" -Force
+        Copy-Item -Path $_.FullName -Destination "$LibsTemp/$TrtModuleLibs" -Force
     }
 }
 else {
-    Write-Host "Copying TensorRT shared libraries to tensorrt_libs..." -ForegroundColor Green
+    Write-Host "Copying TensorRT shared libraries to $TrtModuleLibs..." -ForegroundColor Green
     # Copy only the specific major-versioned TensorRT shared libraries to avoid duplicate files from symlinks
     $LibFiles = Get-ChildItem -Path "$TrtSdkDir/lib" -Filter "*.so.$TrtMajor"
     if ($LibFiles.Count -eq 0) {
         $LibFiles = Get-ChildItem -Path "$TrtSdkDir/lib" -Filter "*.so"
     }
     $LibFiles | ForEach-Object {
-        Copy-Item -Path $_.FullName -Destination "$LibsTemp/tensorrt_libs" -Force
+        Copy-Item -Path $_.FullName -Destination "$LibsTemp/$TrtModuleLibs" -Force
     }
 }
 

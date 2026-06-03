@@ -1,0 +1,45 @@
+name: Setup TensorRT RTX (Windows)
+description: Downloads and installs NVIDIA TensorRT RTX for Windows
+inputs:
+  tensorrt-rtx-version:
+    description: TensorRT RTX version (e.g., 1.4.0.76)
+    required: true
+  cuda-version:
+    description: CUDA version (e.g., 13.2.1)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download TensorRT
+      if: steps.cache-trt.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $parts = "${{ inputs.tensorrt-rtx-version }}".Split(".")
+        $fullTrtRtxVer = "$($parts[0]).$($parts[1]).$($parts[2]).$($parts[3])"
+        $shortTrtRtxVer = "$($parts[0]).$($parts[1])"
+        $parts = "${{ inputs.cuda-version }}".Split(".")
+        $cudaVer = "$($parts[0]).$($parts[1])"
+
+        Write-Host "Full TRT RTX version:" $fullTrtRtxVer
+        Write-Host "Short TRT RTX version:" $shortTrtRtxVer
+        Write-Host "CUDA version:" $cudaVer
+
+        $url = "https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/$shortTrtRtxVer/TensorRT-RTX-$fullTrtRtxVer-Windows-amd64-cuda-$cudaVer-Release-external.zip"
+        Write-Host "Downloading TensorRT RTX from $url"
+        curl.exe -L -o trt.zip $url
+
+        Write-Host "Extracting TensorRT RTX..."
+        Expand-Archive -LiteralPath trt.zip -DestinationPath . -Force
+        $extractedFolder = (Get-ChildItem -Path "TensorRT-RTX-*" -Directory | Select-Object -First 1).FullName
+        Move-Item -Path $extractedFolder -Destination "tensorrt-rtx"
+        Remove-Item -Path trt.zip -Force
+
+    - name: Configure TensorRT Paths
+      shell: pwsh
+      run: |
+        $trtPath = (Resolve-Path "tensorrt-rtx").Path
+        "TENSORRT_RTX_HOME=$trtPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "TENSORRT_RTX_PATH=$trtPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "TENSORRT_HOME=$trtPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "TENSORRT_PATH=$trtPath" | Out-File -FilePath $env:GITHUB_ENV -Append

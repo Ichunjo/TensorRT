@@ -13,6 +13,11 @@ New-Item -ItemType Directory -Force -Path $ModuleBuildDir | Out-Null
 
 # CMake Configure
 Write-Host "Configuring CMake..." -ForegroundColor Green
+$TrtModule = if ($IsRTX) { "tensorrt_rtx" } else { "tensorrt" }
+$TrtNvInferName = if ($IsRTX) { "tensorrt_rtx" } else { "nvinfer" }
+$TrtOnnxParserName = if ($IsRTX) { "tensorrt_onnxparser_rtx" } else { "nvonnxparser" }
+$TrtLibSuffix = if ($IsRTX) { "_$TrtMinor" } else { "" }
+
 $CMakeArgs = @(
     "-S", "$Workspace/python",
     "-B", "$ModuleBuildDir",
@@ -23,11 +28,12 @@ $CMakeArgs = @(
     "-DEXT_PATH=$($ExtDir.Replace('\', '/'))",
     "-DCUDA_INCLUDE_DIRS=$($CudaIncludeDir.Replace('\', '/'))",
     "-DTENSORRT_ROOT=$($Workspace.Replace('\', '/'))",
-    "-DTENSORRT_MODULE=tensorrt",
+    "-DTENSORRT_MODULE=$TrtModule",
     "-DTENSORRT_LIBPATH=$($TrtSdkDir.Replace('\', '/'))/lib",
-    "-DTRT_NVINFER_NAME=nvinfer",
+    "-DTRT_NVINFER_NAME=$TrtNvInferName",
     "-DTENSORRT_MAJOR_VERSION=$TrtMajor",
-    "-DTRT_ONNXPARSER_NAME=nvonnxparser"
+    "-DTRT_ONNXPARSER_NAME=$TrtOnnxParserName",
+    "-DTRT_LIB_SUFFIX=$TrtLibSuffix"
 )
 
 if ($IsOSLinux) {
@@ -52,8 +58,9 @@ if (Test-Path $BindingsTemp) {
 }
 Copy-Item -Path "$Workspace/python/packaging/bindings_wheel" -Destination $BindingsTemp -Recurse
 
-# Rename "tensorrt" directory to "tensorrt_bindings" for standalone import structure
-Rename-Item -Path "$BindingsTemp/tensorrt" -NewName "tensorrt_bindings"
+# Rename "tensorrt" directory to "$TrtModuleBindings" for standalone import structure
+$TrtModuleBindings = $TrtModule + "_bindings"
+Rename-Item -Path "$BindingsTemp/tensorrt" -NewName $TrtModuleBindings
 
 # Copy build backend
 Copy-Item -Path "$Workspace/python/packaging/tensorrt_build_backend" -Destination "$BindingsTemp/tensorrt_build_backend" -Recurse
@@ -64,10 +71,10 @@ Copy-Item -Path "$Workspace/python/packaging/requirements.txt" -Destination "$Bi
 # Copy compiled library
 if ($IsOSWindows) {
     $PossiblePaths = @(
-        "$ModuleBuildDir/tensorrt/Release/tensorrt.dll",
-        "$ModuleBuildDir/tensorrt/tensorrt.dll",
-        "$ModuleBuildDir/Release/tensorrt.dll",
-        "$ModuleBuildDir/tensorrt.dll"
+        "$ModuleBuildDir/$TrtModule/Release/$TrtModule.dll",
+        "$ModuleBuildDir/$TrtModule/$TrtModule.dll",
+        "$ModuleBuildDir/Release/$TrtModule.dll",
+        "$ModuleBuildDir/$TrtModule.dll"
     )
     $CompiledLib = $null
     foreach ($Path in $PossiblePaths) {
@@ -77,16 +84,16 @@ if ($IsOSWindows) {
         }
     }
     if ($null -eq $CompiledLib) {
-        Write-Error "Could not find compiled tensorrt.dll"
+        Write-Error "Could not find compiled $TrtModule.dll"
         exit 1
     }
-    $DstLib = "$BindingsTemp/tensorrt_bindings/tensorrt.pyd"
+    $DstLib = "$BindingsTemp/$TrtModuleBindings/$TrtModule.pyd"
 }
 else {
     $PossiblePaths = @(
-        "$ModuleBuildDir/tensorrt/tensorrt.so",
-        "$ModuleBuildDir/tensorrt.so",
-        "$ModuleBuildDir/Release/tensorrt.so"
+        "$ModuleBuildDir/$TrtModule/$TrtModule.so",
+        "$ModuleBuildDir/$TrtModule.so",
+        "$ModuleBuildDir/Release/$TrtModule.so"
     )
     $CompiledLib = $null
     foreach ($Path in $PossiblePaths) {
@@ -96,10 +103,10 @@ else {
         }
     }
     if ($null -eq $CompiledLib) {
-        Write-Error "Could not find compiled tensorrt.so"
+        Write-Error "Could not find compiled $TrtModule.so"
         exit 1
     }
-    $DstLib = "$BindingsTemp/tensorrt_bindings/tensorrt.so"
+    $DstLib = "$BindingsTemp/$TrtModuleBindings/$TrtModule.so"
 }
 Copy-Item -Path $CompiledLib -Destination $DstLib -Force
 

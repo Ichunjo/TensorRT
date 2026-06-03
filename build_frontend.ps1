@@ -11,6 +11,12 @@ if (Test-Path $FrontendTemp) {
 }
 Copy-Item -Path "$Workspace/python/packaging/frontend_sdist" -Destination $FrontendTemp -Recurse
 
+# Rename package directory if not default
+$TrtModule = if ($IsRTX) { "tensorrt_rtx" } else { "tensorrt" }
+if ($TrtModule -ne "tensorrt") {
+    Rename-Item -Path "$FrontendTemp/tensorrt" -NewName $TrtModule
+}
+
 # Copy build backend
 Copy-Item -Path "$Workspace/python/packaging/tensorrt_build_backend" -Destination "$FrontendTemp/tensorrt_build_backend" -Recurse
 

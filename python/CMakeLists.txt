@@ -397,6 +397,9 @@ endif()
 
 # ---------- MODULE DEPENDENCIES ----------
 add_compile_definitions(TENSORRT_MODULE=${TENSORRT_MODULE})
+if(${TENSORRT_MODULE} STREQUAL "tensorrt_rtx")
+    add_compile_definitions(TRT_RTX=1)
+endif()
 
 if("${TRT_VCAST}" STREQUAL "1" OR "${TRT_VCAST_SAFE}" STREQUAL "1")
     set(vfc_suffix "_static")
@@ -427,7 +430,9 @@ message(STATUS "NVOnnxParserLib = ${nvonnx_parser_lib_name}")
 
 if(${TENSORRT_MODULE} STREQUAL "tensorrt" OR ${TENSORRT_MODULE} STREQUAL "tensorrt_rtx")
     set(TRT_LIBS ${nvinfer_lib_name} ${nvonnxparser_lib_name})
+    if(NOT ${TENSORRT_MODULE} STREQUAL "tensorrt_rtx")
         list(APPEND TRT_LIBS ${nvinfer_plugin_lib_name})
+    endif()
 elseif(${TENSORRT_MODULE} STREQUAL "tensorrt_lean")
     set(TRT_LIBS ${nvinfer_lean_lib_name})
 elseif(${TENSORRT_MODULE} STREQUAL "tensorrt_dispatch")

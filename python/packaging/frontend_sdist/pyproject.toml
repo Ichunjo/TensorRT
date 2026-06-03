@@ -12,8 +12,8 @@ license = "Apache-2.0"
 license-files = ["LICENSE.txt"]
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
-    "tensorrt_cu##CUDA_MAJOR##_bindings == ##TENSORRT_PYTHON_VERSION##",
-    "tensorrt_cu##CUDA_MAJOR##_libs == ##TENSORRT_PYTHON_VERSION##",
+    "##TENSORRT_MODULE##_cu##CUDA_MAJOR##_bindings == ##TENSORRT_PYTHON_VERSION##",
+    "##TENSORRT_MODULE##_cu##CUDA_MAJOR##_libs == ##TENSORRT_PYTHON_VERSION##",
 ]
 
 [tool.setuptools]

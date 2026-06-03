@@ -1,30 +1,31 @@
-name: Compile TensorRT Bindings
+name: Compile TensorRT RTX Bindings
 
 on:
   push:
     branches:
-      - main
+      - rtx
     paths:
       - "python/**"
       - ".github/workflows/build-wheels.yml"
       - ".github/actions/**"
       - "*.ps1"
-      - "VERSION"
+      - "VERSION_RTX"
     tags:
-      - "v*"
+      - "rtx-v*"
   pull_request:
     paths:
       - "python/**"
       - ".github/workflows/build-wheels.yml"
       - ".github/actions/**"
       - "*.ps1"
-      - "VERSION"
+      - "VERSION_RTX"
   workflow_dispatch:
 
 env:
   CUDA_MAJOR: "13"
   CUDA_WINDOWS_VERSION: "13.2.1"
   CUDA_LINUX_x86_64_VERSION: "13.2"
+  BUILD_RTX: "1"
 
 jobs:
   build-wheels:
@@ -60,7 +61,7 @@ jobs:
       - name: Resolve versions from VERSION file
         shell: pwsh
         run: |
-          $v = (Get-Content VERSION -Raw).Trim()
+          $v = (Get-Content VERSION_RTX -Raw).Trim()
           $p = $v.Split(".")
           $trtVersion = "$($p[0]).$($p[1]).$($p[2])"
           "TRT_VERSION=$trtVersion" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -68,7 +69,7 @@ jobs:
           "TRT_MAJOR=$($p[0])" | Out-File -FilePath $env:GITHUB_ENV -Append
           "TRT_MINOR=$($p[1])" | Out-File -FilePath $env:GITHUB_ENV -Append
           "TENSORRT_WINDOWS_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "TENSORRT_LINUX_VERSION=$v-1.cuda${{ env.CUDA_LINUX_x86_64_VERSION }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TENSORRT_LINUX_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
@@ -85,26 +86,16 @@ jobs:
 
       - name: Setup TensorRT (Windows)
         if: runner.os == 'Windows'
-        uses: ./.github/actions/setup-tensorrt-windows
+        uses: ./.github/actions/setup-tensorrt-rtx-windows
         with:
-          tensorrt-version: ${{ env.TENSORRT_WINDOWS_VERSION }}
+          tensorrt-rtx-version: ${{ env.TENSORRT_WINDOWS_VERSION }}
           cuda-version: ${{ env.CUDA_WINDOWS_VERSION }}
-          cache-key: ${{ matrix.os }}
 
       - name: Setup CUDA & TensorRT (Linux x64)
         if: runner.os == 'Linux'
-        uses: ./.github/actions/setup-tensorrt-linux-x86-64
+        uses: ./.github/actions/setup-tensorrt-rtx-linux-x86-64
         with:
-          tensorrt-version: ${{ env.TENSORRT_LINUX_VERSION }}
-          tensorrt-components: >-
-            libnvinfer-devel,
-            libnvinfer-plugin-devel,
-            libnvinfer-dispatch-devel,
-            libnvinfer-lean-devel,
-            libnvinfer-headers-devel,
-            libnvinfer-safe-headers-devel,
-            libnvinfer-headers-plugin-devel,
-            libnvonnxparsers-devel
+          tensorrt-rtx-version: ${{ env.TENSORRT_LINUX_VERSION }}
           cuda-repo: ${{ matrix.cuda_repo }}
           cuda-version: ${{ env.CUDA_LINUX_x86_64_VERSION }}
           cuda-components: "cuda-nvcc, cuda-cudart-devel, cuda-driver-devel, cuda-profiler-api"
@@ -120,9 +111,8 @@ jobs:
         run: |
           uvx --with patchelf auditwheel repair \
             --allow-pure-python-wheel \
-            --exclude libnvinfer.so.* \
-            --exclude libnvinfer_plugin.so.* \
-            --exclude libnvonnxparser.so.* \
+            --exclude libtensorrt_onnxparser_rtx.so.* \
+            --exclude libtensorrt_rtx.so.* \
             --strip python/build/dist/*.whl \
             -w repaired_wheels
           rm python/build/dist/*.whl
@@ -131,27 +121,27 @@ jobs:
       - name: Upload Bindings Wheels
         uses: actions/upload-artifact@v7
         with:
-          name: tensorrt-bindings-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
-          path: python/build/dist/tensorrt_cu${{ env.CUDA_MAJOR }}_bindings-*.whl
+          name: tensorrt-rtx-bindings-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
+          path: python/build/dist/tensorrt_rtx_cu${{ env.CUDA_MAJOR }}_bindings-*.whl
 
       # - name: Upload Libs Wheels
       #   uses: actions/upload-artifact@v7
       #   with:
-      #     name: tensorrt-libs-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
-      #     path: python/build/dist/tensorrt_cu${{ env.CUDA_MAJOR }}_libs-*.whl
+      #     name: tensorrt-rtx-libs-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
+      #     path: python/build/dist/tensorrt_rtx_cu${{ env.CUDA_MAJOR }}_libs-*.whl
 
       # - name: Upload Frontend Wheels
       #   uses: actions/upload-artifact@v7
       #   with:
-      #     name: tensorrt-frontend-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
+      #     name: tensorrt-rtx-frontend-wheel-cuda-${{ env.CUDA_MAJOR }}-${{ matrix.name }}
       #     path: |
-      #       python/build/dist/tensorrt_cu${{ env.CUDA_MAJOR }}-*.whl
-      #       python/build/dist/tensorrt_cu${{ env.CUDA_MAJOR }}-*.tar.gz
+      #       python/build/dist/tensorrt_rtx_cu${{ env.CUDA_MAJOR }}-*.whl
+      #       python/build/dist/tensorrt_rtx_cu${{ env.CUDA_MAJOR }}-*.tar.gz
 
   publish:
     name: Publish to vs-wheels
     needs: build-wheels
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/rtx-v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -159,13 +149,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          sparse-checkout: VERSION
+          sparse-checkout: VERSION_RTX
           sparse-checkout-cone-mode: false
 
       - name: Resolve versions from VERSION file
         shell: bash
         run: |
-          v=$(cat VERSION | tr -d '[:space:]')
+          v=$(cat VERSION_RTX | tr -d '[:space:]')
           echo "TRT_PY_VERSION=$v" >> "$GITHUB_ENV"
 
       - name: Download distributions
@@ -177,7 +167,7 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          TAG="tensorrt-cu${{ env.CUDA_MAJOR }}_bindings-${{ env.TRT_PY_VERSION }}"
+          TAG="tensorrt-rtx-cu${{ env.CUDA_MAJOR }}_bindings-${{ env.TRT_PY_VERSION }}"
           echo "version=${{ env.TRT_PY_VERSION }}" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
@@ -187,8 +177,8 @@ jobs:
           repository: Jaded-Encoding-Thaumaturgy/vs-wheels
           token: ${{ secrets.VS_WHEELS_RELEASE_TOKEN }}
           tag_name: ${{ steps.version.outputs.tag }}
-          name: tensorrt-cu${{ env.CUDA_MAJOR }}_bindings-${{ steps.version.outputs.version }}
+          name: tensorrt-rtx-cu${{ env.CUDA_MAJOR }}_bindings-${{ steps.version.outputs.version }}
           files: dist/*
-          body: tensorrt-cu${{ env.CUDA_MAJOR }}_bindings-${{ steps.version.outputs.version }}
+          body: tensorrt-rtx-cu${{ env.CUDA_MAJOR }}_bindings-${{ steps.version.outputs.version }}
           fail_on_unmatched_files: true
           generate_release_notes: false
