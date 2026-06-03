@@ -27,26 +27,12 @@ if (-not (Test-Path $TrtSdkDir)) {
 
 # --- STEP 2: SETUP EXTERNAL DIRECTORY LINKS ---
 Write-Host "`nStep 2: Setting up external directory links..." -ForegroundColor Cyan
-if (Test-Path "$ExtDir/python3.14") {
-    Write-Host "Removing existing python3.14 directory/links..."
-    if ($IsOSWindows) {
-        $Item = Get-Item "$ExtDir/python3.14"
-        if ($Item.Attributes -match "ReparsePoint") {
-            [System.IO.Directory]::Delete("$ExtDir/python3.14")
-        }
-        else {
-            Remove-Item -Force -Recurse "$ExtDir/python3.14"
-        }
-    }
-    else {
-        Remove-Item -Force -Recurse "$ExtDir/python3.14"
-    }
-}
+
 New-Item -ItemType Directory -Force -Path "$ExtDir/python3.14" | Out-Null
 
 if ($IsOSWindows) {
-    New-Item -ItemType Junction -Path "$ExtDir/python3.14/include" -Target "$PythonPath/include" -Force | Out-Null
-    New-Item -ItemType Junction -Path "$ExtDir/python3.14/lib" -Target "$PythonPath/libs" -Force | Out-Null
+    New-LinkItem -Path "$ExtDir/python3.14/include" -Target "$PythonPath/include"
+    New-LinkItem -Path "$ExtDir/python3.14/lib" -Target "$PythonPath/libs"
 }
 else {
     $LinuxIncludeTarget = "$PythonPath/include"
@@ -58,32 +44,11 @@ else {
     elseif (Test-Path "$PythonPath/include/python3.14") {
         $LinuxIncludeTarget = "$PythonPath/include/python3.14"
     }
-    New-Item -ItemType SymbolicLink -Path "$ExtDir/python3.14/include" -Target $LinuxIncludeTarget -Force | Out-Null
-    New-Item -ItemType SymbolicLink -Path "$ExtDir/python3.14/lib" -Target "$PythonPath/lib" -Force | Out-Null
+    New-LinkItem -Path "$ExtDir/python3.14/include" -Target $LinuxIncludeTarget
+    New-LinkItem -Path "$ExtDir/python3.14/lib" -Target "$PythonPath/lib"
 }
 
-if (Test-Path "$ExtDir/pybind11") {
-    Write-Host "Removing existing pybind11 link..."
-    if ($IsOSWindows) {
-        $Item = Get-Item "$ExtDir/pybind11"
-        if ($Item.Attributes -match "ReparsePoint") {
-            [System.IO.Directory]::Delete("$ExtDir/pybind11")
-        }
-        else {
-            Remove-Item -Force "$ExtDir/pybind11"
-        }
-    }
-    else {
-        Remove-Item -Force "$ExtDir/pybind11"
-    }
-}
-
-if ($IsOSWindows) {
-    New-Item -ItemType Junction -Path "$ExtDir/pybind11" -Target "$Workspace/parsers/onnx/third_party/onnx/third_party/pybind11" -Force | Out-Null
-}
-else {
-    New-Item -ItemType SymbolicLink -Path "$ExtDir/pybind11" -Target "$Workspace/parsers/onnx/third_party/onnx/third_party/pybind11" -Force | Out-Null
-}
+Remove-LinkOrDirectory -Path "$ExtDir/pybind11"
 
 # Initialize/Clean output directory
 if (Test-Path $DistDir) {

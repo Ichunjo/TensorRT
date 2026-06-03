@@ -38,14 +38,7 @@ else {
 
 # Replace placeholders
 Write-Host "Replacing template placeholders in tensorrt_libs..." -ForegroundColor Green
-$TextFiles = Get-ChildItem -Path $LibsTemp -Recurse -File | Where-Object { $_.Extension -in @(".py", ".toml", ".cfg", ".txt") }
-foreach ($File in $TextFiles) {
-    $Content = Get-Content -Path $File.FullName -Raw -Encoding utf8
-    foreach ($Key in $Replacements.Keys) {
-        $Content = $Content.Replace($Key, $Replacements[$Key])
-    }
-    [System.IO.File]::WriteAllText($File.FullName, $Content, (New-Object System.Text.UTF8Encoding $false))
-}
+Invoke-PlaceholderReplacement -Directory $LibsTemp
 
 # Run PEP 517 build for libs
 Push-Location $LibsTemp

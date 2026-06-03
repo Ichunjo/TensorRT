@@ -19,6 +19,11 @@ cmake_minimum_required(VERSION 3.31 FATAL_ERROR)
 
 project(TRTPyBinds LANGUAGES CXX)
 
+if(NOT DEFINED TENSORRT_ROOT)
+    set(TENSORRT_ROOT ../)
+endif()
+list(APPEND CMAKE_MODULE_PATH ${TENSORRT_ROOT}/cmake/modules)
+
 option(TRT_BUILD_ENABLE_NEW_PYTHON_FLOW "Use new build logic based on the main CMake build." OFF)
 
 if (${TRT_BUILD_ENABLE_NEW_PYTHON_FLOW})
@@ -290,12 +295,8 @@ message(STATUS "WIN_EXTERNALS: ${WIN_EXTERNALS}")
 
 # Convert to an absolute path.
 set_ifndef(ONNX_INC_DIR ${TENSORRT_ROOT}/parsers/onnx)
-find_path(
-    PYBIND11_DIR pybind11/pybind11.h
-    HINTS ${EXT_PATH} ${WIN_EXTERNALS}
-    PATH_SUFFIXES pybind11/include
-    REQUIRED
-)
+include(FetchPyBind11)
+set(PYBIND11_DIR ${pybind11_SOURCE_DIR}/include)
 
 message(STATUS "ONNX_INC_DIR: ${ONNX_INC_DIR}")
 message(STATUS "PYBIND11_DIR: ${PYBIND11_DIR}")

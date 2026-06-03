@@ -105,14 +105,7 @@ Copy-Item -Path $CompiledLib -Destination $DstLib -Force
 
 # Replace placeholders
 Write-Host "Replacing template placeholders in tensorrt_bindings..." -ForegroundColor Green
-$TextFiles = Get-ChildItem -Path $BindingsTemp -Recurse -File | Where-Object { $_.Extension -in @(".py", ".toml", ".cfg", ".txt") }
-foreach ($File in $TextFiles) {
-    $Content = Get-Content -Path $File.FullName -Raw -Encoding utf8
-    foreach ($Key in $Replacements.Keys) {
-        $Content = $Content.Replace($Key, $Replacements[$Key])
-    }
-    [System.IO.File]::WriteAllText($File.FullName, $Content, (New-Object System.Text.UTF8Encoding $false))
-}
+Invoke-PlaceholderReplacement -Directory $BindingsTemp
 
 # Run PEP 517 build for bindings
 Push-Location $BindingsTemp

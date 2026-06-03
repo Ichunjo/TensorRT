@@ -11,6 +11,19 @@ if (-not (Test-Path "$Workspace/.venv")) {
     uv venv "$Workspace/.venv" | Out-Null
 }
 
+# --- VERSION (single source of truth: VERSION file) ---
+$VersionFileContent = (Get-Content "$Workspace/VERSION" -Raw).Trim()
+
+$TrtPyVersion = if (-not [string]::IsNullOrEmpty($env:TRT_PY_VERSION)) { $env:TRT_PY_VERSION } else { $VersionFileContent }
+$VersionParts = $TrtPyVersion.Split(".")
+
+$TrtMajor = if (-not [string]::IsNullOrEmpty($env:TRT_MAJOR)) { $env:TRT_MAJOR } else { $VersionParts[0] }
+$TrtMinor = if (-not [string]::IsNullOrEmpty($env:TRT_MINOR)) { $env:TRT_MINOR } else { $VersionParts[1] }
+$TrtVersion = if (-not [string]::IsNullOrEmpty($env:TRT_VERSION)) { $env:TRT_VERSION } else { "$($VersionParts[0]).$($VersionParts[1]).$($VersionParts[2])" }
+
+$CudaMajor = $env:CUDA_MAJOR
+if ([string]::IsNullOrEmpty($CudaMajor)) { $CudaMajor = "13" }
+
 # Dynamic environment variable checking for Linux system-installed TensorRT
 if ($IsOSLinux) {
     $TempTrtSdkDir = $env:TRT_SDK_DIR
@@ -45,34 +58,19 @@ $CudaIncludeDir = "$CudaPath/include"
 
 $TrtSdkDir = $env:TRT_SDK_DIR
 if ([string]::IsNullOrEmpty($TrtSdkDir)) {
-    $PossibleTrtDir = "$Workspace/TensorRT-10.16.1.11"
+    $PossibleTrtDir = "$Workspace/TensorRT-$TrtPyVersion"
     if (Test-Path $PossibleTrtDir) {
         $TrtSdkDir = $PossibleTrtDir
     }
     else {
         if ($IsOSWindows) {
-            $TrtSdkDir = "d:\TensorRT\TensorRT-10.16.1.11"
+            $TrtSdkDir = "d:\TensorRT\TensorRT-$TrtPyVersion"
         }
         else {
             $TrtSdkDir = "/usr/local/tensorrt"
         }
     }
 }
-
-$TrtVersion = $env:TRT_VERSION
-if ([string]::IsNullOrEmpty($TrtVersion)) { $TrtVersion = "10.16.1" }
-
-$TrtPyVersion = $env:TRT_PY_VERSION
-if ([string]::IsNullOrEmpty($TrtPyVersion)) { $TrtPyVersion = "10.16.1.11" }
-
-$TrtMajor = $env:TRT_MAJOR
-if ([string]::IsNullOrEmpty($TrtMajor)) { $TrtMajor = "10" }
-
-$TrtMinor = $env:TRT_MINOR
-if ([string]::IsNullOrEmpty($TrtMinor)) { $TrtMinor = "16" }
-
-$CudaMajor = $env:CUDA_MAJOR
-if ([string]::IsNullOrEmpty($CudaMajor)) { $CudaMajor = "13" }
 
 $PlatName = $env:PLAT_NAME
 if ([string]::IsNullOrEmpty($PlatName)) {
@@ -102,4 +100,79 @@ $Replacements = @{
     "##TENSORRT_PLUGIN_DISABLED##" = "False"
     "##CUDA_MAJOR##"               = $CudaMajor
     "##TENSORRT_README##"          = "Standalone python bindings for TensorRT"
+}
+
+# --- HELPER FUNCTIONS ---
+
+function Remove-LinkOrDirectory {
+    <#
+    .SYNOPSIS
+        Removes a symlink, junction, or regular directory.
+        Handles broken junctions (e.g., stale WSL-path reparse points) gracefully.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    if (-not (Test-Path $Path)) { return }
+
+    if ($IsOSWindows) {
+        $Item = Get-Item $Path
+        if ($Item.Attributes -match "ReparsePoint") {
+            # Try Directory::Delete first (normal junctions), fall back to File::Delete
+            # for broken reparse points that the system doesn't recognize as directories
+            try {
+                [System.IO.Directory]::Delete($Path)
+            }
+            catch {
+                [System.IO.File]::Delete($Path)
+            }
+        }
+        else {
+            Remove-Item -Force -Recurse $Path
+        }
+    }
+    else {
+        Remove-Item -Force -Recurse $Path
+    }
+}
+
+function New-LinkItem {
+    <#
+    .SYNOPSIS
+        Creates a Junction (Windows) or SymbolicLink (Linux) at $Path pointing to $Target.
+        Removes any existing item at $Path first.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Target
+    )
+
+    Remove-LinkOrDirectory -Path $Path
+
+    if ($IsOSWindows) {
+        New-Item -ItemType Junction -Path $Path -Target $Target -Force | Out-Null
+    }
+    else {
+        New-Item -ItemType SymbolicLink -Path $Path -Target $Target -Force | Out-Null
+    }
+}
+
+function Invoke-PlaceholderReplacement {
+    <#
+    .SYNOPSIS
+        Replaces all ##PLACEHOLDER## tokens in text files under a directory using the $Replacements map.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Directory
+    )
+
+    $TextFiles = Get-ChildItem -Path $Directory -Recurse -File | Where-Object { $_.Extension -in @(".py", ".toml", ".cfg", ".txt") }
+    foreach ($File in $TextFiles) {
+        $Content = Get-Content -Path $File.FullName -Raw -Encoding utf8
+        foreach ($Key in $Replacements.Keys) {
+            $Content = $Content.Replace($Key, $Replacements[$Key])
+        }
+        [System.IO.File]::WriteAllText($File.FullName, $Content, (New-Object System.Text.UTF8Encoding $false))
+    }
 }

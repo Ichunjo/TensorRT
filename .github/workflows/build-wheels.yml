@@ -9,6 +9,7 @@ on:
       - ".github/workflows/build-wheels.yml"
       - ".github/actions/**"
       - "*.ps1"
+      - "VERSION"
     tags:
       - "v*"
   pull_request:
@@ -17,18 +18,13 @@ on:
       - ".github/workflows/build-wheels.yml"
       - ".github/actions/**"
       - "*.ps1"
+      - "VERSION"
   workflow_dispatch:
 
 env:
-  TRT_VERSION: "10.16.1"
-  TRT_PY_VERSION: "10.16.1.11"
-  TRT_MAJOR: "10"
-  TRT_MINOR: "16"
   CUDA_MAJOR: "13"
   CUDA_WINDOWS_VERSION: "13.2.1"
   CUDA_LINUX_x86_64_VERSION: "13.2"
-  TENSORRT_WINDOWS_VERSION: "10.16.1.11"
-  TENSORRT_LINUX_VERSION: "10.16.1.11-1.cuda13.2"
 
 jobs:
   build-wheels:
@@ -54,6 +50,26 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Install PowerShell (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Install PowerShell Core
+          curl -s https://packages.microsoft.com/config/rhel/8/prod.repo | tee /etc/yum.repos.d/microsoft.repo
+          dnf install -y powershell
+
+      - name: Resolve versions from VERSION file
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          $p = $v.Split(".")
+          $trtVersion = "$($p[0]).$($p[1]).$($p[2])"
+          "TRT_VERSION=$trtVersion" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TRT_PY_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TRT_MAJOR=$($p[0])" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TRT_MINOR=$($p[1])" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TENSORRT_WINDOWS_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TENSORRT_LINUX_VERSION=$v-1.cuda${{ env.CUDA_LINUX_x86_64_VERSION }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -74,13 +90,6 @@ jobs:
           tensorrt-version: ${{ env.TENSORRT_WINDOWS_VERSION }}
           cuda-version: ${{ env.CUDA_WINDOWS_VERSION }}
           cache-key: ${{ matrix.os }}
-
-      - name: Install PowerShell (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          # Install PowerShell Core
-          curl -s https://packages.microsoft.com/config/rhel/8/prod.repo | tee /etc/yum.repos.d/microsoft.repo
-          dnf install -y powershell
 
       - name: Setup CUDA & TensorRT (Linux x64)
         if: runner.os == 'Linux'
@@ -147,6 +156,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: VERSION
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve versions from VERSION file
+        shell: bash
+        run: |
+          v=$(cat VERSION | tr -d '[:space:]')
+          echo "TRT_PY_VERSION=$v" >> "$GITHUB_ENV"
+
       - name: Download distributions
         uses: actions/download-artifact@v8
         with:
@@ -171,18 +192,3 @@ jobs:
           body: tensorrt-cu${{ env.CUDA_MAJOR }}_bindings-${{ steps.version.outputs.version }}
           fail_on_unmatched_files: true
           generate_release_notes: false
-
-  trigger-index:
-    name: Trigger vs-wheels index
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Repository Dispatch
-        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4
-        with:
-          token: ${{ secrets.VS_WHEELS_RELEASE_TOKEN }}
-          repository: Jaded-Encoding-Thaumaturgy/vs-wheels
-          event-type: index
